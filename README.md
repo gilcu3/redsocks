@@ -1,5 +1,8 @@
 REDSOCKS2
 =========
+
+[![Build Status](https://travis-ci.org/gilcu3/redsocks.svg?branch=master)](https://travis-ci.org/gilcu3/redsocks)
+
 This is a modified version of original redsocks.
 The name is changed to REDSOCKS2 to distinguish with original redsocks.
 REDSOCKS2 contains several new features besides many bug fixes to original
@@ -79,7 +82,7 @@ To build with PF and run on MacOS, you will need some pf headers that are not in
 You can find them on this repository : https://github.com/opensource-apple/xnu
 And the Makefile will going find this file for you
 
-Configurations
+# Configurations
 --------------
 Please see 'redsocks.conf.example' for whole picture of configuration file.
 Below are additional sample configuration sections for different usage.
