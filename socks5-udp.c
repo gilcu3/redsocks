@@ -48,15 +48,14 @@ static struct evbuffer* socks5_mkpassword_plain_wrapper(void *p)
 
 static struct evbuffer* socks5_mkassociate(void *p)
 {
-    struct sockaddr_in sa;
-    //p = p; /* Make compiler happy */
+    struct sockaddr_storage sa;
     memset(&sa, 0, sizeof(sa));
-    sa.sin_family = AF_INET;
+    sa.ss_family = ((const struct sockaddr_storage *)p)->ss_family;
     return socks5_mkcommand_plain(socks5_cmd_udp_associate, &sa);
 }
 
 static void socks5_fill_preamble(
-    socks5_udp_preabmle *preamble,
+       socks5_udp_preamble *preamble,
        struct sockaddr * addr,
        size_t *preamble_len)
 {
@@ -125,13 +124,18 @@ static int socks5_ready_to_fwd(struct redudp_client_t *client)
 static void socks5_forward_pkt(redudp_client *client, struct sockaddr *destaddr, void *buf, size_t pktlen)
 {
     socks5_client *socks5client = (void*)(client + 1);
-    socks5_udp_preabmle req;
+    socks5_udp_preamble req;
     struct msghdr msg;
     struct iovec io[2];
-    size_t preamble_len;
+    size_t preamble_len = 0;
+
+    if (socks5client->udprelayaddr.sin_family != AF_INET && socks5client->udprelayaddr.sin_family != AF_INET6) {
+        redudp_log_errno(client, LOG_WARNING, "Unknown address type %d",
+                         socks5client->udprelayaddr.sin_family);
+        return;
+    }
 
     socks5_fill_preamble(&req, destaddr, &preamble_len);
-
     ssize_t outgoing, fwdlen = pktlen + preamble_len;
     memset(&msg, 0, sizeof(msg));
     msg.msg_name = &socks5client->udprelayaddr;
@@ -161,7 +165,7 @@ static void socks5_pkt_from_socks(int fd, short what, void *_arg)
     socks5_client *socks5client = (void*)(client + 1);
     union {
         char buf[MAX_UDP_PACKET_SIZE];
-        socks5_udp_preabmle header;
+        socks5_udp_preamble header;
     } * pkt = client->instance->shared_buff;
     ssize_t pktlen, fwdlen;
     struct sockaddr_storage udprelayaddr;
@@ -172,7 +176,9 @@ static void socks5_pkt_from_socks(int fd, short what, void *_arg)
     if (pktlen == -1)
         return;
 
-    if (memcmp(&udprelayaddr, &socks5client->udprelayaddr, sizeof(udprelayaddr)) != 0) {
+    if (evutil_sockaddr_cmp((struct sockaddr *)&udprelayaddr,
+                            (struct sockaddr *)&socks5client->udprelayaddr,
+                            1) != 0) {
         char buf[RED_INET_ADDRSTRLEN];
         redudp_log_error(client, LOG_NOTICE, "Got packet from unexpected address %s.",
                          red_inet_ntop(&udprelayaddr, buf, sizeof(buf)));
@@ -205,13 +211,13 @@ static void socks5_pkt_from_socks(int fd, short what, void *_arg)
     else if (pkt->header.addrtype == socks5_addrtype_ipv6) {
         struct sockaddr_in6 * src = (struct sockaddr_in6 *)&src_addr;
         src->sin6_family = AF_INET6;
-        memcpy(&src->sin6_addr, &pkt->header.addr.v6.addr, sizeof(src->sin6_addr));
+        src->sin6_addr = pkt->header.addr.v6.addr;
         src->sin6_port = pkt->header.addr.v6.port;
         header_size += sizeof(socks5_addr_ipv6);
     }
     // TODO: Support domain addr
 
-    fwdlen = pktlen - sizeof(pkt->header);
+    fwdlen = pktlen - header_size;
     redudp_fwd_pkt_to_sender(client, pkt->buf + header_size, fwdlen, &src_addr);
 }
 
@@ -313,7 +319,7 @@ static void socks5_read_auth_reply(struct bufferevent *buffev, void *_arg)
     }
 
     error = redsocks_write_helper_ex_plain(
-            socks5client->relay, NULL, socks5_mkassociate, NULL, 0, /* last two are ignored */
+            socks5client->relay, NULL, socks5_mkassociate, &client->destaddr, 0,
             sizeof(socks5_expected_assoc_reply), sizeof(socks5_expected_assoc_reply));
     if (error)
         goto fail;
@@ -350,7 +356,7 @@ static void socks5_read_auth_methods(struct bufferevent *buffev, void *_arg)
     }
     else if (reply.method == socks5_auth_none) {
         ierror = redsocks_write_helper_ex_plain(
-                socks5client->relay, NULL, socks5_mkassociate, NULL, 0, /* last two are ignored */
+                socks5client->relay, NULL, socks5_mkassociate, &client->destaddr, 0,
                 sizeof(socks5_expected_assoc_reply), sizeof(socks5_expected_assoc_reply));
         if (ierror)
             goto fail;

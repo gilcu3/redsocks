@@ -358,12 +358,9 @@ static void check_dns_delay()
  */
 static parser_entry tcpdns_entries[] =
 {
-    { .key = "local_ip",   .type = pt_in_addr },
-    { .key = "local_port", .type = pt_uint16 },
-    { .key = "tcpdns1",    .type = pt_in_addr },
-    { .key = "tcpdns1_port", .type = pt_uint16 },
-    { .key = "tcpdns2",    .type = pt_in_addr },
-    { .key = "tcpdns2_port", .type = pt_uint16 },
+    { .key = "bind",       .type = pt_pchar },
+    { .key = "tcpdns1",    .type = pt_pchar },
+    { .key = "tcpdns2",    .type = pt_pchar },
     { .key = "timeout",    .type = pt_uint16 },
     { }
 };
@@ -387,7 +384,7 @@ static int tcpdns_onenter(parser_section *section)
 
     for (parser_entry *entry = &section->entries[0]; entry->key; entry++)
         entry->addr =
-            (strcmp(entry->key, "bin") == 0)   ? (void*)&instance->config.bind:
+            (strcmp(entry->key, "bind") == 0)   ? (void*)&instance->config.bind:
             (strcmp(entry->key, "tcpdns1") == 0)   ? (void*)&instance->config.tcpdns1 :
             (strcmp(entry->key, "tcpdns2") == 0)   ? (void*)&instance->config.tcpdns2 :
             (strcmp(entry->key, "timeout") == 0) ? (void*)&instance->config.timeout :
@@ -455,9 +452,10 @@ static int tcpdns_init_instance(tcpdns_instance *instance)
      */
     int error;
     int fd = -1;
+    int bindaddr_len = 0;
     char buf1[RED_INET_ADDRSTRLEN];
 
-    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    fd = socket(instance->config.bindaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
     if (fd == -1) {
         log_errno(LOG_ERR, "socket");
         goto fail;
@@ -465,7 +463,12 @@ static int tcpdns_init_instance(tcpdns_instance *instance)
     if (apply_reuseport(fd))
         log_error(LOG_WARNING, "Continue without SO_REUSEPORT enabled");
 
-    error = bind(fd, (struct sockaddr*)&instance->config.bindaddr, sizeof(instance->config.bindaddr));
+#if defined(__APPLE__) || defined(__FreeBSD__)
+    bindaddr_len = instance->config.bindaddr.ss_len > 0 ? instance->config.bindaddr.ss_len : sizeof(instance->config.bindaddr);
+#else
+    bindaddr_len = sizeof(instance->config.bindaddr);
+#endif
+    error = bind(fd, (struct sockaddr*)&instance->config.bindaddr, bindaddr_len);
     if (error) {
         log_errno(LOG_ERR, "bind");
         goto fail;

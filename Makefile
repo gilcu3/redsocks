@@ -14,13 +14,16 @@ SRCS := $(OBJS:.o=.c)
 CONF := config.h
 DEPS := .depend
 OUT := redsocks2
-VERSION := 0.67
+VERSION := 0.68
 OS := $(shell uname)
 
 LIBS := -levent
 override CFLAGS += -D_BSD_SOURCE -D_DEFAULT_SOURCE -Wall
 ifeq ($(OS), Linux)
 override CFLAGS += -std=c99 -D_XOPEN_SOURCE=600
+endif
+ifeq ($(OS), FreeBSD)
+override CFLAGS +=-I/usr/local/include -L/usr/local//lib
 endif
 ifeq ($(OS), Darwin)
 override CFLAGS +=-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib
@@ -49,11 +52,11 @@ override CFLAGS += -DENABLE_HTTPS_PROXY
 override FEATURES += ENABLE_HTTPS_PROXY
 $(info Compile with HTTPS proxy enabled.)
 endif
-override LIBS += -lssl -lcrypto
+override LIBS += -lssl -lcrypto -ldl
 override CFLAGS += -DUSE_CRYPTO_OPENSSL
 endif
 ifdef ENABLE_STATIC
-override LIBS += -ldl -lz
+override LIBS += -lz
 override LDFLAGS += -Wl,-static -static -static-libgcc -s
 override FEATURES += STATIC_COMPILE
 endif
@@ -114,11 +117,11 @@ base.c: $(CONF)
 
 ifeq ($(OS), Darwin)
 $(OSX_HEADERS_PATH)/net/pfvar.h:
-	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/pfvar.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/bsd/net/pfvar.h
+	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/pfvar.h https://raw.githubusercontent.com/apple/darwin-xnu/master/bsd/net/pfvar.h
 $(OSX_HEADERS_PATH)/net/radix.h:
-	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/radix.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/bsd/net/radix.h
+	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/radix.h https://raw.githubusercontent.com/apple/darwin-xnu/master/bsd/net/radix.h
 $(OSX_HEADERS_PATH)/libkern/tree.h:
-	mkdir -p $(OSX_HEADERS_PATH)/libkern && curl -o $(OSX_HEADERS_PATH)/libkern/tree.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/libkern/libkern/tree.h
+	mkdir -p $(OSX_HEADERS_PATH)/libkern && curl -o $(OSX_HEADERS_PATH)/libkern/tree.h https://raw.githubusercontent.com/apple/darwin-xnu/master/libkern/libkern/tree.h
 endif
 
 $(DEPS): $(OSX_HEADERS) $(SRCS)
